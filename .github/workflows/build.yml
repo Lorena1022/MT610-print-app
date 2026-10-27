@@ -1,33 +1,45 @@
 name: Build APK
+
 on:
   push:
-  workflow_dispatch:
+    branches: [main, master]
+  workflow_dispatch: {}
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: unzip -o MT610Print.zip
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Build
-        working-directory: MT610Print
         run: gradle assembleRelease --no-daemon --stacktrace
-      - run: cp MT610Print/build/outputs/apk/release/*.apk MT610Print.apk
+
+      - name: Rename APK
+        run: cp build/outputs/apk/release/*.apk MT610Print.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: MT610Print
           path: MT610Print.apk
-      - name: Publish release
+
+      # Puts the APK on the repo's Releases page so it downloads straight to the phone.
+      - name: Publish "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest MT610Print.apk --title "MT610 Print" --notes "Latest build"
+          gh release create latest MT610Print.apk \
+            --title "MT610 Print - latest build" \
+            --notes "Built from ${GITHUB_SHA::7}. Download MT610Print.apk below and install it."
