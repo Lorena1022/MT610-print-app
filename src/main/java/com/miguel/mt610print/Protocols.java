@@ -41,6 +41,7 @@ public final class Protocols {
             "Printer default",
             "Extra heat - ESC/POS style A",
             "Extra heat - ESC/POS style B",
+            "Maximum heat - all styles, hottest values",
     };
 
     private Protocols() {}
@@ -74,6 +75,12 @@ public final class Protocols {
                 if (s.speed > 0) {
                     o.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x32, (byte) (s.speed == 2 ? 1 : 4)}, 0, 7);
                 }
+            } else if (s.heat == 3) {
+                // Everything at once, at the hottest values each command allows.
+                o.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x31, 0x08}, 0, 7);       // density +8
+                o.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x32, 0x01}, 0, 7);       // slowest speed
+                o.write(new byte[]{0x1B, 0x37, 0x02, (byte) 255, (byte) 80}, 0, 5);       // 24 dots, 2.55 ms heat
+                o.write(new byte[]{0x12, 0x23, (byte) 0xFF}, 0, 3);                         // DC2 # max density
             } else if (s.heat == 2) {
                 // ESC 7 n1 n2 n3: fewer dots heated at once, longer heat time, longer interval
                 o.write(new byte[]{0x1B, 0x37, 0x05, (byte) 200, (byte) (s.speed > 0 ? 40 : 10)}, 0, 5);
