@@ -31,6 +31,9 @@ Every page goes through a thermal-paper cleanup before printing:
 *Document* forces sharp text everywhere, *Photo* forces smooth shading,
 *Simple* is plain black/white.
 **Darkness** - slide right for darker. **Extra bold** - thickens text and lines.
+**Print speed** - *Slow* / *Slowest* send the page in small blocks at a limited rate so the
+printer moves slower and each line gets more heat (fixes patchy, faded small text).
+**Printer heat (experimental)** - tries common ESC/POS density commands; test before use.
 Open a file in the app to see an exact preview before printing.
 The same processing is used when printing from Android's Print menu.
 - **After each page** - use *Form feed* if your paper has page marks and pages drift.

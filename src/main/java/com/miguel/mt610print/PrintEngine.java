@@ -62,10 +62,22 @@ public final class PrintEngine {
 
     private static void write(OutputStream out, byte[] data, Settings s, AtomicBoolean cancel)
             throws IOException {
+        int rate = Protocols.bytesPerSecond(s);
+        long start = System.nanoTime();
+        long sent = 0;
         for (int off = 0; off < data.length; off += CHUNK) {
             if (cancel != null && cancel.get()) throw new IOException("Cancelled");
-            out.write(data, off, Math.min(CHUNK, data.length - off));
-            if (s.chunkDelayMs > 0) sleep(s.chunkDelayMs);
+            int len = Math.min(CHUNK, data.length - off);
+            out.write(data, off, len);
+            sent += len;
+            if (rate > 0) {
+                // keep a steady pace: wait until this much data "should" have been sent
+                long dueMs = sent * 1000L / rate;
+                long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+                if (dueMs > elapsedMs) sleep(dueMs - elapsedMs);
+            } else if (s.chunkDelayMs > 0) {
+                sleep(s.chunkDelayMs);
+            }
         }
         out.flush();
     }

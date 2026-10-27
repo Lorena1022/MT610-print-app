@@ -29,12 +29,56 @@ public final class Protocols {
             "Form feed (jump to next page mark)",
     };
 
+    public static final String[] SPEEDS = {
+            "Normal (fastest)",
+            "Slow - darker, more even",
+            "Slowest - best quality",
+    };
+    /** Max print rate in dot rows per second for each speed (0 = no limit). */
+    private static final int[] ROWS_PER_SEC = {0, 64, 32};
+
+    public static final String[] HEAT = {
+            "Printer default",
+            "Extra heat - ESC/POS style A",
+            "Extra heat - ESC/POS style B",
+    };
+
     private Protocols() {}
+
+    /**
+     * Bytes per second to send at the chosen speed, or 0 for no limit.
+     * The printer can only print rows it has received, so limiting the data
+     * rate (in small blocks) makes the paper move slower and gives each dot
+     * row more heat time.
+     */
+    public static int bytesPerSecond(Settings s) {
+        int rows = ROWS_PER_SEC[s.speed];
+        return rows == 0 ? 0 : rows * (s.widthDots / 8) * (s.dpi >= 300 ? 3 : 2) / 2;
+    }
+
+    /** Rows per ESC/POS raster block: small blocks when slowed down. */
+    static int bandFor(Settings s) {
+        return s.speed > 0 ? 8 : s.bandLines;
+    }
 
     /** Bytes sent once when the Bluetooth connection opens. */
     public static byte[] jobStart(Settings s) {
         if (s.protocol == ESCPOS_BANDS || s.protocol == ESCPOS_BLOCK) {
-            return new byte[]{0x1B, 0x40};               // ESC @  initialize
+            ByteArrayOutputStream o = new ByteArrayOutputStream();
+            o.write(0x1B);
+            o.write(0x40);                               // ESC @  initialize
+            if (s.heat == 1) {
+                // GS ( K fn=49: print density, +6 = darkest
+                o.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x31, 0x06}, 0, 7);
+                // GS ( K fn=50: print speed, 1 = slowest (only when slowed down)
+                if (s.speed > 0) {
+                    o.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x32, (byte) (s.speed == 2 ? 1 : 4)}, 0, 7);
+                }
+            } else if (s.heat == 2) {
+                // ESC 7 n1 n2 n3: fewer dots heated at once, longer heat time, longer interval
+                o.write(new byte[]{0x1B, 0x37, 0x05, (byte) 200, (byte) (s.speed > 0 ? 40 : 10)}, 0, 5);
+            }
+            return o.toByteArray();
         }
         return new byte[0];
     }
@@ -54,7 +98,7 @@ public final class Protocols {
                 break;
             case ESCPOS_BANDS:
             default:
-                escPos(o, s, bits, widthBytes, height, s.bandLines);
+                escPos(o, s, bits, widthBytes, height, bandFor(s));
                 break;
         }
         return o.toByteArray();

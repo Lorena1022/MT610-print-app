@@ -175,6 +175,22 @@ public class MainActivity extends Activity {
         });
         root.addView(bold);
 
+        root.addView(label("Print speed"));
+        root.addView(spinner(Protocols.SPEEDS, settings.speed, pos -> {
+            settings.speed = pos;
+            settings.save(this);
+        }));
+        root.addView(hint("Slower printing gives each line more heat, so small or busy text comes out "
+                + "darker and more even. A full page takes about 35 s on Slow and 70 s on Slowest."));
+        root.addView(label("Printer heat (experimental)"));
+        root.addView(spinner(Protocols.HEAT, settings.heat, pos -> {
+            settings.heat = pos;
+            settings.save(this);
+        }));
+        root.addView(hint("Asks the printer itself to burn darker. HPRT doesn't publish the MT610's "
+                + "command, so this tries two common ones. Tap Print test after changing it - if the "
+                + "strip prints stray characters or nothing changes, set it back to Printer default."));
+
         darknessLabel = label("");
         root.addView(darknessLabel);
         SeekBar darkness = new SeekBar(this);
