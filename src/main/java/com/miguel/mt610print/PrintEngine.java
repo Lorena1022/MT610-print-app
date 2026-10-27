@@ -8,6 +8,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.UUID;
@@ -32,9 +33,18 @@ public final class PrintEngine {
         BluetoothSocket socket = connect(ctx, s.mac);
         try {
             OutputStream out = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+            // Let the printer's Bluetooth settle; early bytes can be dropped.
+            sleep(400);
+            drain(in);
+            boolean escPos = s.protocol == Protocols.ESCPOS_BANDS || s.protocol == Protocols.ESCPOS_BLOCK;
+            // Does the printer answer status requests? (DLE EOT 1 is a harmless real-time query.)
+            boolean talksBack = escPos && query(out, in, new byte[]{0x10, 0x04, 0x01}, 1500);
             write(out, Protocols.jobStart(s), s, cancel);
             int total = src.count() * copies;
             int done = 0;
+            long rows = 0;
+            long startMs = System.currentTimeMillis();
             for (int c = 0; c < copies; c++) {
                 for (int i = 0; i < src.count(); i++) {
                     if (cancel != null && cancel.get()) throw new IOException("Cancelled");
@@ -43,20 +53,68 @@ public final class PrintEngine {
                     Bitmap bmp = src.render(i, s.widthDots);
                     Raster.Packed packed = ThermalProcessor.process(bmp, s.mode, s.darkness, s.bold);
                     bmp.recycle();
+                    rows += packed.height;
                     write(out, Protocols.page(s, packed.bits, packed.widthBytes, packed.height), s, cancel);
                 }
             }
             out.flush();
-            progress.onStatus("Finishing...");
-            // Give the printer time to drain its buffer before the link drops,
-            // otherwise the last part of the page can be lost.
-            sleep(2500);
+            progress.onStatus("Waiting for the printer to finish...");
+            // Never drop the connection while the printer still has page data
+            // stored up: the rest would print at the start of the next job and
+            // push that job's top off the page.
+            long budgetMs = Math.max(20_000L, rows * 1000L / 20);   // worst case 20 rows/s
+            boolean confirmed = false;
+            if (talksBack) {
+                // GS r 1 is answered only after everything before it has been processed.
+                confirmed = query(out, in, new byte[]{0x1D, 0x72, 0x01}, budgetMs);
+            }
+            if (confirmed) {
+                sleep(2000);   // last rows leave the print head
+            } else {
+                // No status from the printer: wait as long as the slowest likely print speed.
+                long elapsed = System.currentTimeMillis() - startMs;
+                long expected = rows * 1000L / 40 + 3000;           // ~40 rows/s = 5 mm/s
+                long left = Math.max(3000, expected - elapsed);
+                long end = System.currentTimeMillis() + left;
+                while (System.currentTimeMillis() < end) {
+                    if (cancel != null && cancel.get()) break;
+                    long secs = (end - System.currentTimeMillis() + 999) / 1000;
+                    progress.onStatus("Waiting for the printer to finish... " + secs + " s");
+                    sleep(1000);
+                }
+            }
             progress.onStatus("Done");
         } finally {
             try {
                 socket.close();
             } catch (IOException ignored) {
             }
+        }
+    }
+
+    /** Sends a status request and waits up to {@code timeoutMs} for any reply byte. */
+    private static boolean query(OutputStream out, InputStream in, byte[] cmd, long timeoutMs) {
+        try {
+            drain(in);
+            out.write(cmd);
+            out.flush();
+            long end = System.currentTimeMillis() + timeoutMs;
+            while (System.currentTimeMillis() < end) {
+                if (in.available() > 0) {
+                    drain(in);
+                    return true;
+                }
+                sleep(100);
+            }
+        } catch (IOException ignored) {
+        }
+        return false;
+    }
+
+    private static void drain(InputStream in) {
+        try {
+            while (in.available() > 0) in.skip(in.available());
+        } catch (IOException ignored) {
         }
     }
 
